@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>스탑워치</title>
+<style>
+  :root {
+    --panel: rgba(32, 27, 51, 0.68);
+    --track: #2a2e38;
+    --text: #f1f3f6;
+    --muted: #a6a2c0;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(160deg, #211539 0%, #2c1b4d 22%, #1c2b52 55%, #101a2e 100%);
+    color: var(--text);
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    position: relative;
+  }
+
+  /* --- 살아있는 배경 --- */
+  .blob {
+    position: fixed;
+    width: 55vmax;
+    height: 55vmax;
+    border-radius: 50%;
+    filter: blur(90px);
+    opacity: 0.65;
+    mix-blend-mode: screen;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .blob1 { background: radial-gradient(circle, #ff6bd6, transparent 70%); top: -20%; left: -15%; animation: drift1 16s ease-in-out infinite alternate; }
+  .blob2 { background: radial-gradient(circle, #4f8cff, transparent 70%); bottom: -25%; right: -15%; animation: drift2 20s ease-in-out infinite alternate; }
+  .blob3 { background: radial-gradient(circle, #ffd24f, transparent 70%); bottom: 10%; left: -20%; opacity: 0.4; animation: drift3 24s ease-in-out infinite alternate; }
+  .blob4 { background: radial-gradient(circle, #5cffb0, transparent 70%); top: 20%; right: -18%; width: 40vmax; height: 40vmax; opacity: 0.35; animation: drift2 18s ease-in-out infinite alternate-reverse; }
+  @keyframes drift1 { to { transform: translate(10%, 15%) scale(1.15); } }
+  @keyframes drift2 { to { transform: translate(-12%, -10%) scale(1.1); } }
+  @keyframes drift3 { to { transform: translate(8%, -12%) scale(1.2); } }
+
+  .card {
+    position: relative;
+    z-index: 1;
+    background: var(--panel);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 24px;
+    padding: 32px 32px 28px;
+    width: 380px;
+    max-width: 90vw;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    text-align: center;
+  }
+  h1 {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    margin: 0 0 18px;
+    letter-spacing: 3px;
+  }
+
+  /* --- 목표 시간 칩 --- */
+  .goal-row {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    flex-wrap: nowrap;
+    margin-bottom: 18px;
+  }
+  .chip {
+    flex: 0 0 auto;
+    padding: 7px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.04);
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .chip:hover { border-color: rgba(255,255,255,0.3); }
+  .chip.active {
+    background: linear-gradient(135deg, #4f8cff, #7b6bff);
+    border-color: transparent;
+    color: white;
+    box-shadow: 0 4px 12px rgba(79,140,255,0.4);
+  }
+  .chip:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* --- 시간 표시 --- */
+  .readout-top { margin-bottom: 6px; }
+  .time {
+    font-variant-numeric: tabular-nums;
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    display: inline-block;
+    color: var(--text);
+  }
+  .time .ms { font-size: 18px; color: var(--muted); font-weight: 700; }
+  .time.pop { animation: pop 0.22s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.08); } 100% { transform: scale(1); } }
+  .sub-label {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    background: linear-gradient(135deg, #7db4ff, #4f8cff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .sub-label.hit {
+    background: linear-gradient(135deg, #ffe08a, #e8ac2e);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  /* --- 쌓이는 시간 블록 --- */
+  .stack-wrap {
+    position: relative;
+    width: 220px;
+    height: 190px;
+    margin: 24px auto 10px;
+  }
+  .goal-flash {
+    position: absolute;
+    left: 50%; top: -22px;
+    transform: translate(-50%, 0);
+    font-size: 13px;
+    font-weight: 800;
+    color: #ffd24f;
+    text-shadow: 0 0 12px rgba(255,210,79,0.6);
+    opacity: 0;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .goal-flash.show { animation: flashUp 1.6s ease-out forwards; }
+  @keyframes flashUp {
+    0% { opacity: 0; transform: translate(-50%, 10px) scale(0.9); }
+    15% { opacity: 1; transform: translate(-50%, -6px) scale(1.05); }
+    75% { opacity: 1; transform: translate(-50%, -6px) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -22px) scale(0.95); }
+  }
+  .ground {
+    position: absolute;
+    bottom: 6px; left: 50%;
+    transform: translateX(-50%);
+    width: 150px; height: 16px;
+    background: radial-gradient(ellipse, rgba(0,0,0,0.45), transparent 70%);
+    filter: blur(2px);
+    z-index: 0;
+  }
+  .stack {
+    position: absolute;
+    left: 50%; bottom: 12px;
+    width: 118px;
+    transform: translateX(-50%);
+    z-index: 1;
+    transition: filter 0.4s ease;
+  }
+  .stack.gold { filter: drop-shadow(0 0 14px rgba(255,210,79,0.55)); }
+  .block {
+    position: absolute;
+    left: 50%;
+    width: 108px;
+    height: 14px;
+    margin-left: -54px;
+    border-radius: 7px;
+    border: 1px solid rgba(255,255,255,0.25);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.35);
+    background: linear-gradient(160deg, #6ba4ff, #4f8cff);
+    animation: blockIn 0.3s cubic-bezier(.34,1.56,.64,1);
+  }
+  .block::after {
+    content: '';
+    position: absolute;
+    left: 8%; right: 8%; top: 2px;
+    height: 2px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.35);
+  }
+  .block.shade2 { background: linear-gradient(160deg, #8f7dff, #7b6bff); }
+  .block.gold { background: linear-gradient(160deg, #ffe08a, #e8ac2e); border-color: rgba(255,255,255,0.5); }
+  @keyframes blockIn {
+    0% { transform: translateY(14px) scale(0.7); opacity: 0; }
+    100% { transform: translateY(0) scale(1); opacity: 1; }
+  }
+
+  .spark {
+    position: absolute;
+    top: -10px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ffffff, #9cc3ff 60%, transparent 100%);
+    box-shadow: 0 0 6px rgba(157,195,255,0.8);
+    animation: sparkFall 1.1s ease-in forwards;
+    z-index: 2;
+  }
+  @keyframes sparkFall {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(var(--fall)); opacity: 0; }
+  }
+
+  .confetti-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 7; }
+  .confetto {
+    position: absolute; top: 40%; left: 50%;
+    width: 8px; height: 8px; border-radius: 2px;
+    animation: burst 0.9s cubic-bezier(.2,.7,.3,1) forwards;
+  }
+  @keyframes burst {
+    0% { transform: translate(-50%, -50%) rotate(0deg) translateY(0); opacity: 1; }
+    100% { transform: translate(-50%, -50%) rotate(var(--rot)) translateY(-130px); opacity: 0; }
+  }
+
+  /* --- 버튼 --- */
+  .buttons { display: flex; gap: 12px; justify-content: center; margin-bottom: 18px; }
+  button {
+    flex: 1;
+    padding: 14px 0;
+    border: none;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s cubic-bezier(.34,1.56,.64,1), opacity 0.2s ease, box-shadow 0.2s ease;
+    color: white;
+  }
+  button:active { transform: scale(0.92); }
+  #startStop { background: linear-gradient(135deg, #4f8cff, #7b6bff); box-shadow: 0 6px 16px rgba(79,140,255,0.35); }
+  #startStop.running { background: linear-gradient(135deg, #ff5c5c, #ff8a5c); box-shadow: 0 6px 16px rgba(255,92,92,0.35); }
+  #lap, #reset { background: #2a2e38; color: var(--text); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .laps {
+    max-height: 140px;
+    overflow-y: auto;
+    text-align: left;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 12px;
+  }
+  .laps::-webkit-scrollbar { width: 6px; }
+  .laps::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  .lap-item {
+    display: flex; justify-content: space-between;
+    padding: 8px 4px; font-size: 14px; color: var(--muted);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    animation: slideIn 0.25s ease-out;
+  }
+  @keyframes slideIn { from { transform: translateX(-8px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  .lap-item span:first-child { color: var(--text); font-weight: 600; }
+  .laps:empty::before {
+    content: '랩 기록이 여기에 표시됩니다';
+    display: block; color: #555; font-size: 13px; padding: 12px 0;
+  }
+</style>
+</head>
+<body>
+  <div class="blob blob1"></div>
+  <div class="blob blob2"></div>
+  <div class="blob blob3"></div>
+  <div class="blob blob4"></div>
+
+  <div class="card">
+    <h1>STOPWATCH</h1>
+
+    <div class="goal-row" id="goalRow">
+      <button class="chip" data-sec="30">30초</button>
+      <button class="chip" data-sec="60">1분</button>
+      <button class="chip active" data-sec="180">3분</button>
+      <button class="chip" data-sec="300">5분</button>
+      <button class="chip" data-sec="600">10분</button>
+    </div>
+
+    <div class="readout-top">
+      <div class="time" id="time">00:00<span class="ms" id="ms">.00</span></div>
+      <div class="sub-label" id="subLabel">목표 03:00 · 0%</div>
+    </div>
+
+    <div class="stack-wrap" id="stackWrap">
+      <div class="goal-flash" id="goalFlash">목표 달성!</div>
+      <div class="confetti-layer" id="confettiLayer"></div>
+      <div class="ground"></div>
+      <div class="stack" id="stack"></div>
+    </div>
+
+    <div class="buttons">
+      <button id="lap" disabled>랩</button>
+      <button id="startStop">시작</button>
+      <button id="reset">초기화</button>
+    </div>
+    <div class="laps" id="laps"></div>
+  </div>
+
+<script>
+  const timeEl = document.getElementById('time');
+  const msEl = document.getElementById('ms');
+  const subLabelEl = document.getElementById('subLabel');
+  const startStopBtn = document.getElementById('startStop');
+  const lapBtn = document.getElementById('lap');
+  const resetBtn = document.getElementById('reset');
+  const lapsEl = document.getElementById('laps');
+  const goalRow = document.getElementById('goalRow');
+  const goalFlash = document.getElementById('goalFlash');
+  const confettiLayer = document.getElementById('confettiLayer');
+  const stackWrap = document.getElementById('stackWrap');
+  const stack = document.getElementById('stack');
+
+  const MAX_BLOCKS = 24;
+  const BLOCK_STEP = 6; // px overlap per block
+
+  let goalMs = 180000;
+  let running = false;
+  let startTime = 0;
+  let elapsed = 0;
+  let rafId = null;
+  let sparkTimer = null;
+  let lapCount = 0;
+  let lastLapElapsed = 0;
+  let blockCount = 0;
+  let goalReached = false;
+  let lastWholeSecond = -1;
+
+  function formatTime(t) {
+    const totalMs = Math.max(0, Math.floor(t));
+    const h = Math.floor(totalMs / 3600000);
+    const m = Math.floor((totalMs % 3600000) / 60000);
+    const s = Math.floor((totalMs % 60000) / 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  }
+  function formatCentis(t) {
+    const cs = Math.floor((Math.max(0, Math.floor(t)) % 1000) / 10);
+    return `.${String(cs).padStart(2, '0')}`;
+  }
+
+  function addBlock(index) {
+    const block = document.createElement('div');
+    block.className = 'block' + (index % 2 === 1 ? ' shade2' : '');
+    block.style.bottom = `${index * BLOCK_STEP}px`;
+    block.style.zIndex = index;
+    if (goalReached) block.classList.add('gold');
+    stack.appendChild(block);
+  }
+
+  function spawnConfetti() {
+    const colors = ['#4f8cff', '#7b6bff', '#ffd24f', '#ffb347', '#5cffb0'];
+    for (let i = 0; i < 16; i++) {
+      const el = document.createElement('div');
+      el.className = 'confetto';
+      el.style.setProperty('--rot', `${(Math.random() * 720 - 360)}deg`);
+      el.style.background = colors[i % colors.length];
+      el.style.transform = `translate(-50%, -50%) rotate(${Math.random()*360}deg)`;
+      confettiLayer.appendChild(el);
+      setTimeout(() => el.remove(), 950);
+    }
+  }
+
+  function spawnSpark() {
+    if (!running) return;
+    const h = stackWrap.clientHeight;
+    const s = document.createElement('div');
+    s.className = 'spark';
+    s.style.left = `${30 + Math.random() * 40}%`;
+    s.style.setProperty('--fall', `${h - 20}px`);
+    stackWrap.appendChild(s);
+    setTimeout(() => s.remove(), 1150);
+  }
+
+  function render(t) {
+    timeEl.firstChild.textContent = formatTime(t);
+    msEl.textContent = formatCentis(t);
+
+    const wholeSecond = Math.floor(t / 1000);
+    if (wholeSecond !== lastWholeSecond) {
+      lastWholeSecond = wholeSecond;
+      timeEl.classList.remove('pop');
+      void timeEl.offsetWidth;
+      timeEl.classList.add('pop');
+    }
+
+    const progress = Math.min(t / goalMs, 1);
+    subLabelEl.textContent = `목표 ${formatTime(goalMs)} · ${Math.floor(progress * 100)}%`;
+
+    const targetBlocks = Math.floor(progress * MAX_BLOCKS);
+    while (blockCount < targetBlocks) {
+      addBlock(blockCount);
+      blockCount++;
+    }
+
+    if (!goalReached && progress >= 1) {
+      goalReached = true;
+      stack.classList.add('gold');
+      subLabelEl.classList.add('hit');
+      stack.querySelectorAll('.block').forEach(b => b.classList.add('gold'));
+      goalFlash.classList.remove('show');
+      void goalFlash.offsetWidth;
+      goalFlash.classList.add('show');
+      spawnConfetti();
+    }
+  }
+
+  function tick() {
+    const now = performance.now();
+    render(elapsed + (now - startTime));
+    rafId = requestAnimationFrame(tick);
+  }
+
+  goalRow.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip || running) return;
+    goalRow.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    goalMs = Number(chip.dataset.sec) * 1000;
+    render(elapsed);
+  });
+
+  startStopBtn.addEventListener('click', () => {
+    if (!running) {
+      running = true;
+      startTime = performance.now();
+      startStopBtn.textContent = '정지';
+      startStopBtn.classList.add('running');
+      lapBtn.disabled = false;
+      resetBtn.disabled = true;
+      goalRow.querySelectorAll('.chip').forEach(c => c.disabled = true);
+      tick();
+      sparkTimer = setInterval(spawnSpark, 500);
+    } else {
+      running = false;
+      elapsed += performance.now() - startTime;
+      cancelAnimationFrame(rafId);
+      clearInterval(sparkTimer);
+      startStopBtn.textContent = '시작';
+      startStopBtn.classList.remove('running');
+      lapBtn.disabled = true;
+      resetBtn.disabled = false;
+      goalRow.querySelectorAll('.chip').forEach(c => c.disabled = false);
+    }
+  });
+
+  lapBtn.addEventListener('click', () => {
+    const now = performance.now();
+    const current = elapsed + (now - startTime);
+    const split = current - lastLapElapsed;
+    lastLapElapsed = current;
+    lapCount++;
+    const item = document.createElement('div');
+    item.className = 'lap-item';
+    item.innerHTML = `<span>랩 ${lapCount} (+${formatTime(split)}${formatCentis(split)})</span><span>${formatTime(current)}${formatCentis(current)}</span>`;
+    lapsEl.prepend(item);
+  });
+
+  resetBtn.addEventListener('click', () => {
+    running = false;
+    elapsed = 0;
+    lastLapElapsed = 0;
+    lapCount = 0;
+    blockCount = 0;
+    goalReached = false;
+    lastWholeSecond = -1;
+    cancelAnimationFrame(rafId);
+    clearInterval(sparkTimer);
+    stack.classList.remove('gold');
+    stack.innerHTML = '';
+    subLabelEl.classList.remove('hit');
+    goalFlash.classList.remove('show');
+    render(0);
+    startStopBtn.textContent = '시작';
+    startStopBtn.classList.remove('running');
+    lapBtn.disabled = true;
+    resetBtn.disabled = true;
+    goalRow.querySelectorAll('.chip').forEach(c => c.disabled = false);
+    lapsEl.innerHTML = '';
+  });
+
+  resetBtn.disabled = true;
+  render(0);
+</script>
+</body>
+</html>
